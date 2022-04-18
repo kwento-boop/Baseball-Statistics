@@ -1,0 +1,573 @@
+---
+title: 'SQL: Baseball Statistics'
+author: "Justin Byun"
+date: "3/15/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = FALSE}
+library(RSQLite)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+```
+
+```{r}
+driver <- dbDriver("SQLite")
+con <- dbConnect(driver,  dbname = "lahman2016.sqlite")
+```
+
+```{r}
+dbListTables(con)
+```
+
+```{r}
+dbListFields(con, "Schools")
+```
+
+```{r}
+# This will print the resulting dataframe to the screen
+# Stores the result of the query to a variable (df), which will be an R dataframe
+df <- dbGetQuery(con, '
+SELECT name_full, city, country
+FROM Schools;
+           ')
+```
+
+```{r}
+dbListFields(con, "Parks")
+```
+
+```{r}
+# Why is park.name not recognized as a column???
+dfParks <- dbGetQuery(con, '
+SELECT "park.name", city, state, country
+FROM Parks;
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT city, state, country
+FROM Parks
+WHERE country != "US";
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT "park.name", city, state, country
+FROM Parks
+WHERE state = "CA" AND city != "Los Angeles";
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT "park.name" AS ballpark, city, state, country AS c
+FROM Parks
+WHERE c != "US"
+')
+```
+
+```{r}
+dbListFields(con, "HomeGames")
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT *
+FROM HomeGames
+WHERE "year.key" = 1900
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT *
+FROM HomeGames
+WHERE "year.key" > 1910 AND "year.key" < 1920;
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT *
+FROM HomeGames
+ORDER BY attendance DESC
+LIMIT 3;
+           ')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT COUNT(*) AS Count
+FROM HomeGames
+WHERE "year.key" = 1900;
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT SUM(games) AS TotalNumGames
+FROM HomeGames
+WHERE "year.key" = 1900;
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT COUNT(DISTINCT state) AS num_states,
+       COUNT(DISTINCT country) AS num_countries
+FROM Parks;
+')
+```
+
+# Lecture 2 Notes
+
+```{r}
+dbGetQuery(con, '
+SELECT country, COUNT(*) AS numParks
+FROM Parks
+GROUP BY country;
+           ')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT "year.key", MAX(attendance)
+FROM HomeGames
+GROUP BY "year.key"
+ORDER BY "year.key"
+LIMIT 5;
+')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT "year.key" AS year, COUNT(*) AS n
+FROM HomeGames
+GROUP BY year
+HAVING n > 30
+ORDER BY n
+           ')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT "league.key" AS league, "year.key" AS year, COUNT(*) AS n, AVG(attendance)
+FROM HomeGames
+WHERE league = "NL"
+GROUP BY year
+HAVING n > 15;
+           ')
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT HomeGames."year.key" AS year,
+       Parks."park.name" AS ballpark,
+       HomeGames.attendance AS attendance
+FROM HomeGames
+JOIN Parks
+ON Parks."park.key" = HomeGames."park.key"
+LIMIT 10
+')
+```
+
+
+# Deliverables
+```{r}
+dbListFields(con, "Salaries")
+```
+
+## 1.
+```{r}
+salariesData <- dbGetQuery(con, '
+SELECT yearID, salary, lgID
+FROM Salaries
+')
+```
+
+```{r}
+nrow(salariesData)
+min(salariesData$yearID)
+max(salariesData$yearID)
+```
+There are 26428 observations of salary information. The range of years for which salary information is available is 1985 to 2016.
+
+## 2.
+```{r}
+salariesData %>%
+  ggplot(aes(x = yearID, y = salary)) +
+  geom_point(position = "jitter", size = 0.75) +
+  labs(x = "Year",
+       y = "Salary",
+       title = "Salary vs. Year")
+```
+
+## 3.
+```{r}
+salariesData %>%
+  ggplot(aes(x = yearID, y = salary)) +
+  stat_density2d(aes(fill = ..density..^0.25), geom = "tile", contour = FALSE, n = 200) +
+  scale_fill_continuous(low = "white", high = "dodgerblue4") +
+  geom_point(alpha = 0.1, shape = 20)
+```
+## 4.
+
+```{r}
+mlr.SalaryData <- lm(salary ~ yearID + lgID, data = salariesData)
+```
+
+```{r}
+summary(mlr.SalaryData)
+```
+
+When the year is 0, we expect that average salary of a baseball player to be approximately -$271424769. 
+For every year that passes, we expect the salary of a baseball player to increase by $136738, on average.
+The difference in the average salary of a baseball player between the National League and the American League is $167213.
+
+## 5.
+```{r}
+mlr.logSalaryData <- lm(log(salary + 1) ~ yearID + lgID, data = salariesData)
+```
+
+```{r}
+summary(mlr.logSalaryData)
+```
+
+For every year that passes, we expect the log(salary) to increase by around 0.07190, on average. 
+
+0.04955 is the difference between log(salary) in the National League and the American League (AL - NL).
+
+## 6.
+
+The multiple regression model with the log-scale appears to be a better fit, mostly because of its $r^2_{adj}$ values and the residual standard error, compared to the model without the log-scale. While the latter has an $r^2_{adj}$ value of 0.1242, the former has a $r^2_{adj}$ value of 0.2099. Furthermore, the model with the log-scale for salary has a significantly lower residual standard error of 1.242, compared to 3234000 for the model without the log-scale.
+
+## 7.
+
+```{r}
+dbListFields(con, "Teams")
+```
+```{r}
+dbListFields(con, "Salaries")
+```
+```{r}
+totalSalaries2016 <- dbGetQuery(con, '
+SELECT t.teamID, SUM(salary) AS totalSalary
+FROM Teams AS t
+INNER JOIN Salaries AS s
+ON t.teamID = s.teamID AND t.yearID = s.yearID
+WHERE s.yearID = 2016
+GROUP BY t.teamID
+')
+```
+
+```{r}
+totalSalaries2016
+```
+```{r}
+totalSalaries2016 %>%
+  filter(totalSalary == min(totalSalary) | totalSalary == max(totalSalary))
+```
+
+The team with the highest total salaries in 2016 was the Detroit Tigers (DET), while the team with the lowest total salaries in 2016 was the Philadelphia Phillies (PHI).
+
+## 8.
+
+```{r}
+teamSalaryPerYear<- dbGetQuery(con, '
+SELECT teamID, yearID, SUM(salary) AS totalSalary, lgID
+FROM salaries
+GROUP BY yearID, teamID
+')
+```
+
+```{r}
+nrow(teamSalaryPerYear)
+```
+
+There are 918 rows in this dataframe.
+
+## 9.
+
+```{r}
+# Turning yearID, a numerical variable, into a factor
+teamSalaryPerYear$yearID <- as.factor(teamSalaryPerYear$yearID)
+
+teamSalaryPerYearNL <- teamSalaryPerYear %>%
+  filter(lgID == "NL")
+
+teamSalaryPerYearAL <- teamSalaryPerYear %>%
+  filter(lgID == "AL")
+
+teamSalaryPerYearNL %>%
+  ggplot(aes(x = yearID, y = totalSalary)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 60)) +
+  labs(
+    x = "Year",
+    y = "Total Salary of Team",
+    title = "Yearly Distribution of Team Total Salaries in the National League"
+  )
+
+teamSalaryPerYearAL %>%
+  ggplot(aes(x = yearID, y = totalSalary)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 60)) +
+  labs(
+    x = "Year",
+    y = "Total Salary of Team",
+    title = "Yearly Distribution of Team Total Salaries in the American League"
+  )
+```
+## 10.
+
+```{r}
+dbListFields(con, "SeriesPost")
+```
+
+```{r}
+totalSalaryWSWinners <- dbGetQuery(con, '
+SELECT s.yearID, t.teamID, t.lgID, SUM(s.salary) AS total_salary
+FROM teams AS t
+INNER JOIN salaries AS s
+ON t.teamID = s.teamID AND t.yearID = s.yearID
+INNER JOIN SeriesPost AS sp
+ON t.teamID = sp.teamIDwinner AND t.yearID = sp.yearID AND sp.round = "WS"
+GROUP BY s.yearID;
+')
+```
+
+```{r}
+totalSalaryWorldSeriesNL <- totalSalaryWSWinners %>%
+  filter(lgID == "NL")
+
+nrow(totalSalaryWorldSeriesNL)
+```
+
+```{r}
+totalSalaryWorldSeriesAL <- totalSalaryWSWinners %>%
+  filter(lgID == "AL")
+
+nrow(totalSalaryWorldSeriesAL)
+```
+The World Series winner has been from the American League 17 times, and it has been from the National League 13 times.
+
+```{r}
+mean(totalSalaryWorldSeriesNL$total_salary)
+mean(totalSalaryWorldSeriesAL$total_salary)
+```
+The average salary of the World Series winning team for the National League is 73004014 dollars. For American League, the average salary is 77596664 dollars.
+
+## 11.
+```{r}
+totalSalaryWorldSeriesAL$yearID <- as.factor(totalSalaryWorldSeriesAL$yearID)
+totalSalaryWorldSeriesNL$yearID <- as.factor(totalSalaryWorldSeriesNL$yearID)
+
+teamSalaryPerYear %>%
+  ggplot(aes(x = yearID, y = totalSalary)) +
+  geom_point(shape = 4, color = "darkgray", position = "jitter") +
+  annotate("point", x = totalSalaryWorldSeriesAL$yearID, y = totalSalaryWorldSeriesAL$total_salary, color = "blue", size = 3) +
+  annotate("point", x = totalSalaryWorldSeriesNL$yearID, y = totalSalaryWorldSeriesNL$total_salary, color = "red", size = 3) +
+  annotate("text", x = totalSalaryWorldSeriesNL$yearID, y = totalSalaryWorldSeriesNL$total_salary + 10000000, label = totalSalaryWorldSeriesNL$teamID, size = 3.5) +
+  annotate("text", x = totalSalaryWorldSeriesAL$yearID, y = totalSalaryWorldSeriesAL$total_salary + 10000000, label = totalSalaryWorldSeriesAL$teamID, size = 3.5) +
+  theme(axis.text.x = element_text(angle = 60)) +
+  labs(
+    x = "Year",
+    y = "Total Salary",
+    title = "Total Salaries of NL and AL Teams Every Year"
+  )
+  
+```
+Overall, we see that in both the National League and the American League, the total salaries of the winning team every year in the World Series are often higher than most of the other teams.
+
+## 12.
+
+```{r}
+maxTeamSalaryPerYear <- dbGetQuery(con, '
+SELECT yearID AS year, MAX(totalSalary) AS max_salary, lgID AS league
+FROM (
+      SELECT t.teamID, s.yearID, SUM(salary) AS totalSalary, t.lgID
+      FROM teams AS t
+      INNER JOIN salaries AS s
+      ON t.teamID = s.teamID AND t.yearID = s.yearID
+      GROUP BY s.yearID, t.teamID
+      ) sub1
+GROUP BY yearID
+           ')
+```
+
+```{r}
+cols = c("blue", "red")
+
+maxTeamSalaryPerYear %>%
+  ggplot(aes(x = year, y = max_salary, color = league)) +
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(
+    title = "Maximum Team Salaries Per Year",
+    x = "Year",
+    y = "Team Salary"
+  ) +
+  theme_light()
+```
+Over the years, we see that highest team salaries per year slowly get higher and higher, with no exceptions from 1985 until 2005. Starting from 2005, we see that highest team salary every year starts to stagnate and not increase steadily like it did before 2005. It decreases at some points and increase at other times. It seems that the American League tends to spend much more on player salaries than the National League, given that from 1985 to 2016, a majority of the highest salary teams per year have been from the American League.
+
+## 13.
+```{r}
+dbListFields(con, "AllstarFull")
+```
+
+```{r}
+numAllStarPlayersPerYear <- dbGetQuery(con, '
+SELECT asf.yearID, asf.teamID, COUNT(playerID) AS numPlayers, sp.lgIDWinner
+FROM AllstarFull AS asf
+JOIN SeriesPost AS sp
+ON asf.yearID = sp.yearID AND asf.teamID = sp.teamIDWinner AND sp.round = "WS"
+GROUP BY asf.yearID
+')
+
+numAllStarPlayersPerYear
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT asf.yearID, asf.teamID, COUNT(playerID) AS numPlayers, sp.lgIDWinner
+FROM AllstarFull AS asf
+JOIN SeriesPost AS sp
+ON asf.yearID = sp.yearID AND asf.teamID = sp.teamIDWinner AND sp.round = "WS"
+GROUP BY asf.yearID
+ORDER BY numPlayers DESC
+LIMIT 5;
+')
+```
+
+```{r}
+numAllStarPlayersPerYear %>%
+  ggplot(aes(x = yearID, y = numPlayers)) +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = "Number of Players on Winning Team",
+    title = "Number of Players on WS Winning Team Per Year"
+  )
+```
+
+## 14.
+```{r}
+dbListFields(con, "Batting")
+```
+```{r}
+numHomeRunsByYear <- dbGetQuery(con, '
+SELECT yearID, SUM(HR) AS numHomeRuns
+FROM Batting
+GROUP BY yearID;
+')
+
+numHomeRunsByYear
+```
+
+```{r}
+numHomeRunsByYear %>%
+  ggplot(aes(x = yearID, y = numHomeRuns)) +
+  geom_point() +
+  labs(
+    y = "Number of Home Runs",
+    x = "Year",
+    title = "Number of Home Runs Per Year"
+  )
+```
+
+As the years passed, baseball players gradually made more and more home runs. The scatterplot above shows a generally steady increase in the number of homeruns over the years.
+
+```{r}
+dbListFields(con, "MASTER")
+```
+
+```{r}
+dbGetQuery(con, '
+SELECT playerID, debut, finalGame
+FROM MASTER;
+')
+```
+```{r}
+homerunsByYear <- dbGetQuery(con, '
+SELECT m.playerID, debut, finalGame, b.HR AS numHomeRuns, b.yearID AS year
+FROM Batting AS b
+LEFT JOIN MASTER AS m
+ON m.playerID = b.playerID
+GROUP BY m.playerID, b.yearID
+')
+```
+
+```{r}
+homerunsByYear$debut <- as.Date(homerunsByYear$debut)
+homerunsByYear$finalGame <- as.Date(homerunsByYear$finalGame)
+
+playersWith10YearsPlus <- homerunsByYear %>%
+  filter(time_length(difftime(finalGame, debut), "years") >= 10)
+```
+
+Based on the dataframe labelled "playersWith10YearsPlus," it is not true for all individual players that they hit progressively more homeruns throughout their career. The trend we observe is that some individuals do not see a gradual increase in the number of homeruns they score throughout their career. Meanwhile, players that do see that gradual increase seem to eventually reach a peak number of homeruns in a single year and eventually fall off in the latter half of their career.
+
+## 15. Create a dataframe that contains the number of awards that each award-winning manager has received every year (that they've received an award). Find out what proportion of all managers have won at least one award. Find out how many managers (and what percentage) have won more than one award. Create a plot demonstrating how many awards were given out each year.
+
+```{r}
+managersAwards <- dbGetQuery(con, '
+SELECT playerID, COUNT(awardID) AS numAwards, yearID
+FROM AwardsManagers
+GROUP BY playerID, yearID;
+')
+```
+
+```{r}
+managersData <- dbGetQuery(con, '
+SELECT *
+FROM Managers;
+')
+```
+
+```{r}
+# Finding the percentage of all managers who have won at least one award
+nrow(managersAwards)/nrow(managersData)
+```
+
+```{r}
+# Finding how many managers have won more than 1 award
+nrow(managersAwards %>%
+  filter(numAwards > 1))
+```
+```{r}
+# Finding the percentage of all managers who have won more than one award
+49/nrow(managersData)
+```
+```{r}
+numAwardsPerYear <- dbGetQuery(con, '
+SELECT yearID, COUNT(awardID) AS numAwards
+FROM AwardsManagers
+GROUP BY yearID
+')
+```
+
+```{r}
+numAwardsPerYear %>%
+  ggplot(aes(x = yearID, y = numAwards)) +
+  geom_line() +
+  labs(
+    x = "Year",
+    y = "Number of Awards Given",
+    title = "Number of Awards Given Per Year"
+  )
+```
+
+```{r}
+dbDisconnect(con)
+dbUnloadDriver(driver)
+```
+
