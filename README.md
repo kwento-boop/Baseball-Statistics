@@ -1,1 +1,2 @@
-# Baseball-Statistics
+# Baseball Statistics (SQL)
+The goal of this project is to explore the world of Sabermetrics, otherwise known as the statistics of baseball. The baseball database that our analyses will use comes from Sean Lahman, an investigative reporter for the Rochester (NY) Democrat and Chronicle. The data is available as part of a SQL database, and it consists of batting and pitching data spanning from 1871 to 2020, as well as fielding statistics, data about team managers, post-season data, etc. 
